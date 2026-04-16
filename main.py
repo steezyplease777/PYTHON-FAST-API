@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Form, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import PlainTextResponse
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XLImage
@@ -11,6 +11,7 @@ import os
 import shutil
 import tempfile
 import traceback
+import zipfile
 import requests
 
 
@@ -50,7 +51,7 @@ async def export_excel(
     background_tasks: BackgroundTasks,
     payload: str = Form(...),
     image_manifest: str = Form(...),
-    files: list[UploadFile] = File(default=[]),
+    images_zip: UploadFile = File(...),
 ):
     try:
         raw = json.loads(payload)
@@ -66,15 +67,21 @@ async def export_excel(
             raise HTTPException(status_code=400, detail="image_manifest must be a JSON object.")
 
         temp_dir = tempfile.mkdtemp(prefix="excel_export_")
+        zip_path = os.path.join(temp_dir, images_zip.filename or "images.zip")
 
-        # save uploaded files locally and map form field name -> local path
-        uploaded_files_map = save_uploaded_files(files, temp_dir)
+        with open(zip_path, "wb") as f:
+            shutil.copyfileobj(images_zip.file, f)
 
-        # convert manifest url -> file field name into url -> local path
+        extracted_dir = os.path.join(temp_dir, "images")
+        os.makedirs(extracted_dir, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(extracted_dir)
+
         image_path_map = {}
-        for image_url, field_name in manifest.items():
-            local_path = uploaded_files_map.get(field_name)
-            if local_path:
+        for image_url, filename in manifest.items():
+            local_path = os.path.join(extracted_dir, filename)
+            if os.path.exists(local_path):
                 image_path_map[image_url] = local_path
 
         background_tasks.add_task(process_export_job, rows, image_path_map, temp_dir)
@@ -84,22 +91,6 @@ async def export_excel(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-def save_uploaded_files(files: list[UploadFile], temp_dir: str) -> dict[str, str]:
-    result = {}
-
-    for index, upload in enumerate(files):
-        safe_name = upload.filename or f"upload_{index}"
-        file_path = os.path.join(temp_dir, safe_name)
-
-        with open(file_path, "wb") as out_file:
-            shutil.copyfileobj(upload.file, out_file)
-
-        # upload.name is not available in FastAPI, so we key by filename
-        result[safe_name] = file_path
-
-    return result
 
 
 def process_export_job(rows: list[dict], image_path_map: dict[str, str], temp_dir: str):
@@ -118,7 +109,7 @@ def process_export_job(rows: list[dict], image_path_map: dict[str, str], temp_di
         write_headers(ws, headers)
         write_rows(ws, rows, headers)
         set_fixed_column_widths(ws, headers)
-        embed_images_from_uploaded_files(ws, rows, headers, image_path_map)
+        embed_images_from_zip(ws, rows, headers, image_path_map)
 
         file_uuid = str(uuid4())
         filename = f"{file_uuid}.xlsx"
@@ -189,7 +180,7 @@ def set_fixed_column_widths(ws, headers: list[str]):
             ws.column_dimensions[col_letter].width = DEFAULT_COL_WIDTH
 
 
-def embed_images_from_uploaded_files(ws, rows: list[dict], headers: list[str], image_path_map: dict[str, str]):
+def embed_images_from_zip(ws, rows: list[dict], headers: list[str], image_path_map: dict[str, str]):
     if IMAGE_KEY not in headers:
         print("No product_image column found, skipping image embedding.")
         return
