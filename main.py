@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Form, File, UploadFile, HTTPException, BackgroundTasks
-from fastapi.responses import PlainTextResponse
+from fastapi import FastAPI, Form, File, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Font
@@ -14,6 +14,8 @@ import traceback
 import zipfile
 import requests
 
+from PIL import Image
+
 
 app = FastAPI()
 
@@ -23,15 +25,18 @@ SUPABASE_BUCKET = "excel-image-formatted-api"
 
 IMAGE_KEY = "product_image"
 
-IMAGE_WIDTH = 45
-IMAGE_HEIGHT = 45
-ROW_HEIGHT = 38
+IMAGE_EXPORT_SIZE = 1080
+
+DISPLAY_IMAGE_WIDTH = 90
+DISPLAY_IMAGE_HEIGHT = 90
+
+ROW_HEIGHT = 70
+IMAGE_COL_WIDTH = 14
 
 DEFAULT_COL_WIDTH = 16
 TITLE_COL_WIDTH = 30
 SKU_COL_WIDTH = 24
 UPC_COL_WIDTH = 18
-IMAGE_COL_WIDTH = 9
 
 SESSION = requests.Session()
 
@@ -46,13 +51,14 @@ def health():
     return {"ok": True}
 
 
-@app.post("/export", response_class=PlainTextResponse)
+@app.post("/export")
 async def export_excel(
-    background_tasks: BackgroundTasks,
     payload: str = Form(...),
     image_manifest: str = Form(...),
     images_zip: UploadFile = File(...),
 ):
+    temp_dir = tempfile.mkdtemp(prefix="excel_export_")
+
     try:
         raw = json.loads(payload)
         manifest = json.loads(image_manifest)
@@ -66,7 +72,6 @@ async def export_excel(
         if not isinstance(manifest, dict):
             raise HTTPException(status_code=400, detail="image_manifest must be a JSON object.")
 
-        temp_dir = tempfile.mkdtemp(prefix="excel_export_")
         zip_path = os.path.join(temp_dir, images_zip.filename or "images.zip")
 
         with open(zip_path, "wb") as f:
@@ -82,55 +87,56 @@ async def export_excel(
         for image_url, filename in manifest.items():
             local_path = os.path.join(extracted_dir, filename)
             if os.path.exists(local_path):
-                image_path_map[image_url] = local_path
+                processed_path = make_square_fill_image(local_path, temp_dir, filename)
+                image_path_map[image_url] = processed_path
 
-        background_tasks.add_task(process_export_job, rows, image_path_map, temp_dir)
-        return "ok"
+        public_url = process_export_job(rows, image_path_map, temp_dir)
+
+        return JSONResponse({
+            "ok": True,
+            "url": public_url,
+        })
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-def process_export_job(rows: list[dict], image_path_map: dict[str, str], temp_dir: str):
-    try:
-        print("JOB START")
-        print(f"Rows received: {len(rows)}")
-
-        headers = collect_headers(rows)
-        print(f"Headers: {headers}")
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Export"
-        ws.freeze_panes = "A2"
-
-        write_headers(ws, headers)
-        write_rows(ws, rows, headers)
-        set_fixed_column_widths(ws, headers)
-        embed_images_from_zip(ws, rows, headers, image_path_map)
-
-        file_uuid = str(uuid4())
-        filename = f"{file_uuid}.xlsx"
-        output_path = os.path.join(temp_dir, filename)
-
-        print("Saving workbook...")
-        wb.save(output_path)
-        print(f"Workbook saved: {output_path}")
-
-        print("Uploading to Supabase...")
-        upload_to_supabase(output_path, filename)
-        print(f"Upload complete: {filename}")
-        print("JOB END")
-
-    except Exception as e:
-        print("JOB FAILED")
-        print(str(e))
         print(traceback.format_exc())
-
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cleanup_temp_dir(temp_dir)
+
+
+def process_export_job(rows: list[dict], image_path_map: dict[str, str], temp_dir: str) -> str:
+    print("JOB START")
+    print(f"Rows received: {len(rows)}")
+
+    headers = collect_headers(rows)
+    print(f"Headers: {headers}")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Export"
+    ws.freeze_panes = "A2"
+
+    write_headers(ws, headers)
+    write_rows(ws, rows, headers)
+    set_fixed_column_widths(ws, headers)
+    embed_images_from_zip(ws, rows, headers, image_path_map)
+
+    file_uuid = str(uuid4())
+    filename = f"{file_uuid}.xlsx"
+    output_path = os.path.join(temp_dir, filename)
+
+    print("Saving workbook...")
+    wb.save(output_path)
+    print(f"Workbook saved: {output_path}")
+
+    print("Uploading to Supabase...")
+    public_url = upload_to_supabase(output_path, filename)
+    print(f"Upload complete: {filename}")
+    print("JOB END")
+
+    return public_url
 
 
 def collect_headers(rows: list[dict]) -> list[str]:
@@ -180,12 +186,33 @@ def set_fixed_column_widths(ws, headers: list[str]):
             ws.column_dimensions[col_letter].width = DEFAULT_COL_WIDTH
 
 
+def make_square_fill_image(source_path: str, temp_dir: str, filename: str) -> str:
+    out_path = os.path.join(temp_dir, f"processed_{os.path.splitext(filename)[0]}.png")
+
+    with Image.open(source_path) as img:
+        img = img.convert("RGB")
+        width, height = img.size
+
+        if width > height:
+            offset = (width - height) // 2
+            img = img.crop((offset, 0, offset + height, height))
+        elif height > width:
+            offset = (height - width) // 2
+            img = img.crop((0, offset, width, offset + width))
+
+        img = img.resize((IMAGE_EXPORT_SIZE, IMAGE_EXPORT_SIZE), Image.LANCZOS)
+        img.save(out_path, format="PNG", quality=100)
+
+    return out_path
+
+
 def embed_images_from_zip(ws, rows: list[dict], headers: list[str], image_path_map: dict[str, str]):
     if IMAGE_KEY not in headers:
         print("No product_image column found, skipping image embedding.")
         return
 
     image_col_idx = headers.index(IMAGE_KEY) + 1
+    col_letter = get_column_letter(image_col_idx)
 
     for row_idx, row in enumerate(rows, start=2):
         image_url = row.get(IMAGE_KEY, "")
@@ -203,16 +230,17 @@ def embed_images_from_zip(ws, rows: list[dict], headers: list[str], image_path_m
             ws.row_dimensions[row_idx].height = ROW_HEIGHT
 
             xl_img = XLImage(img_path)
-            xl_img.width = IMAGE_WIDTH
-            xl_img.height = IMAGE_HEIGHT
-            xl_img.anchor = f"{get_column_letter(image_col_idx)}{row_idx}"
+            xl_img.width = DISPLAY_IMAGE_WIDTH
+            xl_img.height = DISPLAY_IMAGE_HEIGHT
+            xl_img.anchor = f"{col_letter}{row_idx}"
             ws.add_image(xl_img)
+
         except Exception as e:
             print(f"Image embed failed for row {row_idx}: {e}")
             ws.cell(row=row_idx, column=image_col_idx, value=image_url)
 
 
-def upload_to_supabase(file_path: str, filename: str):
+def upload_to_supabase(file_path: str, filename: str) -> str:
     upload_url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{filename}"
 
     headers = {
@@ -227,6 +255,8 @@ def upload_to_supabase(file_path: str, filename: str):
 
     if response.status_code not in (200, 201):
         raise Exception(f"Supabase upload failed: {response.status_code} {response.text}")
+
+    return f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{filename}"
 
 
 def cleanup_temp_dir(temp_dir: str):
