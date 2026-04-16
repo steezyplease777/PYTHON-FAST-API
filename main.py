@@ -25,13 +25,13 @@ SUPABASE_BUCKET = "excel-image-formatted-api"
 
 IMAGE_KEY = "product_image"
 
-IMAGE_EXPORT_SIZE = 1080
+# Faster settings
+IMAGE_EXPORT_SIZE = 180
+DISPLAY_IMAGE_WIDTH = 80
+DISPLAY_IMAGE_HEIGHT = 80
 
-DISPLAY_IMAGE_WIDTH = 90
-DISPLAY_IMAGE_HEIGHT = 90
-
-ROW_HEIGHT = 70
-IMAGE_COL_WIDTH = 14
+ROW_HEIGHT = 62
+IMAGE_COL_WIDTH = 12
 
 DEFAULT_COL_WIDTH = 16
 TITLE_COL_WIDTH = 30
@@ -187,7 +187,7 @@ def set_fixed_column_widths(ws, headers: list[str]):
 
 
 def make_square_fill_image(source_path: str, temp_dir: str, filename: str) -> str:
-    out_path = os.path.join(temp_dir, f"processed_{os.path.splitext(filename)[0]}.png")
+    out_path = os.path.join(temp_dir, f"processed_{os.path.splitext(filename)[0]}.jpg")
 
     with Image.open(source_path) as img:
         img = img.convert("RGB")
@@ -200,8 +200,8 @@ def make_square_fill_image(source_path: str, temp_dir: str, filename: str) -> st
             offset = (height - width) // 2
             img = img.crop((0, offset, width, offset + width))
 
-        img = img.resize((IMAGE_EXPORT_SIZE, IMAGE_EXPORT_SIZE), Image.LANCZOS)
-        img.save(out_path, format="PNG", quality=100)
+        img = img.resize((IMAGE_EXPORT_SIZE, IMAGE_EXPORT_SIZE), Image.BILINEAR)
+        img.save(out_path, format="JPEG", quality=85, optimize=True)
 
     return out_path
 
