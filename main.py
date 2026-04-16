@@ -35,7 +35,8 @@ def root():
 async def export_excel(request: Request):
     try:
         body = await request.json()
-        rows = body.get("data")
+        payload = body.get("body", body)
+        rows = payload.get("data")
 
         if not isinstance(rows, list) or len(rows) == 0:
             raise HTTPException(status_code=400, detail='Body must contain "data" as a non-empty array.')
