@@ -312,21 +312,33 @@ async def create_updated_orders_xlsx(data: list[dict[str, Any]] = Body(...)):
         "cut_applied",
     ]
 
-    for order in data:
-        po_number = order.get("PO Number", "Sheet")
-        sheet_name = sanitize_sheet_name(po_number, used_names)
-        ws = wb.create_sheet(title=sheet_name)
+    totals_by_sku: dict[str, dict[str, Any]] = {}
+    sheets_created = 0
 
+    def to_number(value: Any) -> float:
+        try:
+            if value is None or str(value).strip() == "":
+                return 0
+            return float(str(value).strip())
+        except Exception:
+            return 0
+
+    for order in data:
         nested_items = order.get("items") or []
         updated_rows = [
             row for row in nested_items
             if isinstance(row, dict) and row.get("updated") is True
         ]
 
-        ws.append(export_headers)
-
         if not updated_rows:
             continue
+
+        po_number = order.get("PO Number", "Sheet")
+        sheet_name = sanitize_sheet_name(po_number, used_names)
+        ws = wb.create_sheet(title=sheet_name)
+        sheets_created += 1
+
+        ws.append(export_headers)
 
         for row in updated_rows:
             ws.append([
@@ -342,6 +354,48 @@ async def create_updated_orders_xlsx(data: list[dict[str, Any]] = Body(...)):
                 row.get("updated_quantity", ""),
                 row.get("cut_applied", ""),
             ])
+
+            sku = str(row.get("Vendor Style", "")).strip()
+            if not sku:
+                sku = str(row.get("Buyers Catalog or Stock Keeping #", "")).strip()
+            if not sku:
+                sku = "UNKNOWN"
+
+            if sku not in totals_by_sku:
+                totals_by_sku[sku] = {
+                    "Vendor Style": sku,
+                    "UPC/EAN": row.get("UPC/EAN", ""),
+                    "Product/Item Description": row.get("Product/Item Description", ""),
+                    "total_original_ordered": 0,
+                    "total_cut": 0,
+                }
+
+            totals_by_sku[sku]["total_original_ordered"] += to_number(row.get("Qty Ordered", 0))
+            totals_by_sku[sku]["total_cut"] += to_number(row.get("cut_applied", 0))
+
+    totals_ws = wb.create_sheet(title="Totals", index=0)
+    totals_headers = [
+        "Vendor Style",
+        "UPC/EAN",
+        "Product/Item Description",
+        "total_original_ordered",
+        "total_cut",
+    ]
+    totals_ws.append(totals_headers)
+
+    for sku in sorted(totals_by_sku.keys()):
+        entry = totals_by_sku[sku]
+        totals_ws.append([
+            entry["Vendor Style"],
+            entry["UPC/EAN"],
+            entry["Product/Item Description"],
+            entry["total_original_ordered"],
+            entry["total_cut"],
+        ])
+
+    if sheets_created == 0:
+        no_updates_ws = wb.create_sheet(title="No Updates")
+        no_updates_ws.append(["No updated items found"])
 
     output = BytesIO()
     wb.save(output)
