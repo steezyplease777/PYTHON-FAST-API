@@ -1,10 +1,12 @@
-from fastapi import FastAPI, Form, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Form, File, UploadFile, HTTPException, Body
+from fastapi.responses import JSONResponse, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 from uuid import uuid4
+from io import BytesIO
+from typing import Any
 
 import json
 import os
@@ -265,3 +267,74 @@ def cleanup_temp_dir(temp_dir: str):
             shutil.rmtree(temp_dir, ignore_errors=True)
     except Exception:
         pass
+
+def sanitize_sheet_name(name: str, used_names: set[str]) -> str:
+    safe = str(name or "Sheet")
+    for char in ['\\', '/', '?', '*', '[', ']', ':']:
+        safe = safe.replace(char, "")
+    safe = safe.strip() or "Sheet"
+    safe = safe[:31]
+
+    final_name = safe
+    counter = 1
+
+    while final_name in used_names:
+        suffix = f"_{counter}"
+        final_name = safe[: 31 - len(suffix)] + suffix
+        counter += 1
+
+    used_names.add(final_name)
+    return final_name
+
+
+@app.post("/create-updated-orders-xlsx")
+async def create_updated_orders_xlsx(data: list[dict[str, Any]] = Body(...)):
+    if not isinstance(data, list) or not data:
+        raise HTTPException(status_code=400, detail="Request body must be a non-empty array.")
+
+    wb = Workbook()
+    default_sheet = wb.active
+    wb.remove(default_sheet)
+
+    used_names: set[str] = set()
+
+    for order in data:
+        po_number = order.get("PO Number", "Sheet")
+        sheet_name = sanitize_sheet_name(po_number, used_names)
+        ws = wb.create_sheet(title=sheet_name)
+
+        nested_items = order.get("items") or []
+        updated_rows = [
+            row for row in nested_items
+            if isinstance(row, dict) and row.get("updated") is True
+        ]
+
+        if not updated_rows:
+            ws.append(["No updated items"])
+            continue
+
+        headers = []
+        seen = set()
+
+        for row in updated_rows:
+            for key in row.keys():
+                if key not in seen:
+                    seen.add(key)
+                    headers.append(key)
+
+        ws.append(headers)
+
+        for row in updated_rows:
+            ws.append([row.get(header, "") for header in headers])
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="golf_town_updated_orders.xlsx"'
+        },
+    )
