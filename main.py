@@ -298,6 +298,20 @@ async def create_updated_orders_xlsx(data: list[dict[str, Any]] = Body(...)):
 
     used_names: set[str] = set()
 
+    export_headers = [
+        "PO Number",
+        "PO Line #",
+        "Qty Ordered",
+        "Unit Price",
+        "Buyers Catalog or Stock Keeping #",
+        "UPC/EAN",
+        "Vendor Style",
+        "Retail Price",
+        "Product/Item Description",
+        "updated_quantity",
+        "cut_applied",
+    ]
+
     for order in data:
         po_number = order.get("PO Number", "Sheet")
         sheet_name = sanitize_sheet_name(po_number, used_names)
@@ -309,23 +323,25 @@ async def create_updated_orders_xlsx(data: list[dict[str, Any]] = Body(...)):
             if isinstance(row, dict) and row.get("updated") is True
         ]
 
+        ws.append(export_headers)
+
         if not updated_rows:
-            ws.append(["No updated items"])
             continue
 
-        headers = []
-        seen = set()
-
         for row in updated_rows:
-            for key in row.keys():
-                if key not in seen:
-                    seen.add(key)
-                    headers.append(key)
-
-        ws.append(headers)
-
-        for row in updated_rows:
-            ws.append([row.get(header, "") for header in headers])
+            ws.append([
+                row.get("PO Number", ""),
+                row.get("PO Line #", ""),
+                row.get("Qty Ordered", ""),
+                row.get("Unit Price", ""),
+                row.get("Buyers Catalog or Stock Keeping #", ""),
+                row.get("UPC/EAN", ""),
+                row.get("Vendor Style", ""),
+                row.get("Retail Price", ""),
+                row.get("Product/Item Description", ""),
+                row.get("updated_quantity", ""),
+                row.get("cut_applied", ""),
+            ])
 
     output = BytesIO()
     wb.save(output)
