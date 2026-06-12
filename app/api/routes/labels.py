@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app.config import LABELS_DEFAULT_BUCKET, MAX_BATCH_LABELS
 from app.dependencies import check_label_auth
-from app.models.labels import LabelPayload, BatchPayload
+from app.models.labels import LabelPayload, BatchPayload, ExportPayload
 from app.services.label_service import generate_pdf, validate_upc
 from app.services.storage_service import upload_label_pdf
 from app.utils.errors import LabelError, label_error_response
@@ -87,6 +87,71 @@ async def create_label(request: Request, body: dict = Body(...)):
             "size": payload.size,
             "msrp": payload.msrp,
         })
+
+    except LabelError as e:
+        return label_error_response(e.status_code, e.message)
+    except Exception as e:
+        print(traceback.format_exc())
+        return label_error_response(500, f"Unexpected server error: {e}")
+
+
+@router.post("/labels/export")
+async def export_labels(request: Request, body: dict = Body(...)):
+    try:
+        try:
+            payload = ExportPayload.model_validate(body)
+        except Exception as e:
+            return label_error_response(400, f"Invalid request body: {e}")
+
+        check_label_auth(request, payload.token)
+
+        if not payload.request:
+            raise LabelError(400, "request must be a non-empty array.")
+
+        labels = []
+        for idx, item in enumerate(payload.request):
+            if not item.productId:
+                raise LabelError(400, f"request[{idx}]: productId is required.")
+
+            if item.amount < 1:
+                raise LabelError(400, f"request[{idx}]: amount must be at least 1.")
+
+            try:
+                validate_upc(item.upc)
+            except LabelError as e:
+                raise LabelError(e.status_code, f"request[{idx}]: {e.message}")
+
+            label = {
+                "title": item.title,
+                "productId": item.productId,
+                "sku": item.sku,
+                "upc": item.upc,
+                "msrp": item.msrp,
+                "size": item.size,
+            }
+            labels.extend([label] * item.amount)
+
+            if len(labels) > MAX_BATCH_LABELS:
+                raise LabelError(400, f"Too many labels requested: {len(labels)} (max {MAX_BATCH_LABELS}).")
+
+        pdf_bytes = await asyncio.to_thread(generate_pdf, labels)
+
+        title_for_filename = payload.title or "LABELS"
+        if title_for_filename.lower().endswith(".pdf"):
+            title_for_filename = title_for_filename[:-4]
+
+        filename = normalize_combined_filename(title_for_filename)
+        if not filename.lower().endswith(".pdf"):
+            filename = f"{filename}.pdf"
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Label-Count": str(len(labels)),
+            },
+        )
 
     except LabelError as e:
         return label_error_response(e.status_code, e.message)

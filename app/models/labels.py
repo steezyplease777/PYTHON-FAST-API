@@ -59,3 +59,23 @@ class BatchPayload(BaseModel):
     variants: list[BatchVariant] = []
 
     normalize_upper = field_validator("title", mode="before")(LabelPayload.normalize_upper.__func__)
+
+
+class ExportVariant(BatchVariant):
+    amount: int = 1
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def parse_amount(cls, value):
+        if value is None or str(value).strip() == "":
+            return 1
+        return int(value)
+
+
+class ExportPayload(BaseModel):
+    token: str | None = None
+    title: str = "LABELS"
+    mode: str = "download"
+    request: list[ExportVariant] = []
+
+    normalize_upper = field_validator("title", mode="before")(LabelPayload.normalize_upper.__func__)
