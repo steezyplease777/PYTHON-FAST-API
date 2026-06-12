@@ -99,20 +99,21 @@ def draw_label(c, label: dict):
 
     text_max_w = content_w - (box_w + 8 * scale if size_text else 0)
 
-    # --- Title, then ID and SKU lines, all bold black ---
-    title_text, title_size = fit_text(title, "Helvetica-Bold", 9.5 * scale, 6 * scale, text_max_w)
+    # --- Title, then ID and SKU lines, all bold black (kept compact so the
+    # barcode gets the bulk of the vertical space) ---
+    title_text, title_size = fit_text(title, "Helvetica-Bold", 8.5 * scale, 6 * scale, text_max_w)
     title_y = H - pad - title_size
     c.setFont("Helvetica-Bold", title_size)
     c.drawString(pad, title_y, title_text)
 
-    line_size = 7 * scale
+    line_size = 6.5 * scale
     id_text, id_size = fit_text(f"ID: {product_id}", "Helvetica-Bold", line_size, 5 * scale, text_max_w)
-    id_y = title_y - id_size - 3 * scale
+    id_y = title_y - id_size - 2.5 * scale
     c.setFont("Helvetica-Bold", id_size)
     c.drawString(pad, id_y, id_text)
 
     sku_line, sku_size = fit_text(f"SKU: {sku}", "Helvetica-Bold", line_size, 5 * scale, text_max_w)
-    sku_y = id_y - sku_size - 3 * scale
+    sku_y = id_y - sku_size - 2.5 * scale
     c.setFont("Helvetica-Bold", sku_size)
     c.drawString(pad, sku_y, sku_line)
 
@@ -130,18 +131,18 @@ def draw_label(c, label: dict):
     c.line(pad, dash_y, W - pad, dash_y)
     c.setDash([])
 
-    # --- Middle: vector UPC-A barcode centered between SKU and divider ---
-    area_top = sku_y - 4 * scale
-    area_bottom = dash_y + 4 * scale
+    # --- Middle: vector UPC-A barcode filling the space between SKU and divider ---
+    area_top = sku_y - 3 * scale
+    area_bottom = dash_y + 2.5 * scale
     barcode_area_h = area_top - area_bottom
-    barcode_area_w = content_w * 0.85
+    barcode_area_w = content_w
 
-    # Size the symbol explicitly so it fills the label width like the classic
-    # barcodeapi.org rendering: UPC-A is 95 modules wide plus ~9-module quiet
-    # zones per side (~113 total). Sizing via barWidth instead of canvas
-    # scaling keeps the bars wide and the digits large and legible.
+    # Size the symbol explicitly so it fills the label width: UPC-A is
+    # 95 modules wide plus ~9-module quiet zones per side (~113 total).
+    # Sizing via barWidth instead of canvas scaling keeps the bars wide
+    # and the digits large and legible.
     module_width = barcode_area_w / 113.0
-    font_size = max(6.0, min(11.0, module_width * 8.5))
+    font_size = max(6.0, min(12.0 * scale, module_width * 8.5))
 
     # ReportLab's UPCA widget takes the first 11 digits and renders the
     # check digit itself (already validated to match upc[11]).
@@ -150,7 +151,7 @@ def draw_label(c, label: dict):
         value=upc[:11],
         humanReadable=True,
         barWidth=module_width,
-        barHeight=max(barcode_area_h - font_size * 1.1, 10),
+        barHeight=max(barcode_area_h - font_size, 10),
         fontSize=font_size,
     )
 
