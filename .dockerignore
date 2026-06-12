@@ -1,0 +1,15 @@
+.venv/
+.git/
+.wrangler/
+node_modules/
+__pycache__/
+*.pyc
+.env
+.dev.vars
+upc_gen_assets/
+worker/
+wrangler.jsonc
+package.json
+package-lock.json
+main.py
+runtime.txt

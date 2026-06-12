@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local `wrangler dev` runs.
+SUPABASE_URL=https://oeyhqicugdqhxahxfdfg.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=
+API_TOKEN=

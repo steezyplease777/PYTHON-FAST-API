@@ -1,0 +1,33 @@
+{
+  "name": "python-fast-api",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-06-12",
+  "vars": {
+    "SUPABASE_URL": "https://oeyhqicugdqhxahxfdfg.supabase.co"
+  },
+  "containers": [
+    {
+      "class_name": "FastApiContainer",
+      "image": "./Dockerfile",
+      "max_instances": 1,
+      "instance_type": "basic"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "FASTAPI",
+        "class_name": "FastApiContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["FastApiContainer"]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

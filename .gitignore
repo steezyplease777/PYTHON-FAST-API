@@ -1,0 +1,9 @@
+.venv/
+.cursor/
+__pycache__/
+*.pyc
+node_modules/
+.wrangler/
+.env
+.dev.vars
+secrets.json
