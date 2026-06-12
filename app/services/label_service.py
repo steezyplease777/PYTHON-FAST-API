@@ -61,11 +61,13 @@ def ellipsize(text: str, font_name: str, size: float, max_width: float) -> str:
 
 
 def draw_label(c, label: dict):
-    """Draw one label on the current PDF page."""
+    """Draw one label on the current PDF page, matching the original
+    Google Slides template: title/ID/SKU top-left, boxed size top-right,
+    barcode centered, dashed divider and MSRP row at the bottom."""
     W, H = LABEL_WIDTH_PT, LABEL_HEIGHT_PT
     scale = H / (1.5 * inch)
 
-    pad = 9 * scale
+    pad = 10 * scale
     content_w = W - 2 * pad
 
     title = label["title"]
@@ -77,63 +79,62 @@ def draw_label(c, label: dict):
 
     msrp_text = f"${msrp:,.2f}" if msrp is not None else ""
 
-    # --- Top section: title + size, productId underneath ---
-    size_font = 13 * scale
-    size_w = stringWidth(size_text, "Helvetica-Bold", size_font) if size_text else 0
-
-    title_max_w = content_w - (size_w + 8 * scale if size_text else 0)
-    title_text, title_size = fit_text(title, "Helvetica-Bold", 10.5 * scale, 6.5 * scale, title_max_w)
-
-    title_y = H - pad - title_size
     c.setFillColor(colors.black)
+    c.setStrokeColor(colors.black)
+
+    # --- Size in a bold bordered box, top-right ---
+    box_w = 0.0
+    if size_text:
+        box_font = 10 * scale
+        text_w = stringWidth(size_text, "Helvetica-Bold", box_font)
+        box_w = max(text_w + 10 * scale, 22 * scale)
+        box_h = 17 * scale
+        box_x = W - pad - box_w
+        box_y = H - pad - box_h
+
+        c.setLineWidth(1.8 * scale)
+        c.rect(box_x, box_y, box_w, box_h)
+        c.setFont("Helvetica-Bold", box_font)
+        c.drawCentredString(box_x + box_w / 2, box_y + (box_h - box_font * 0.72) / 2, size_text)
+
+    text_max_w = content_w - (box_w + 8 * scale if size_text else 0)
+
+    # --- Title, then ID and SKU lines, all bold black ---
+    title_text, title_size = fit_text(title, "Helvetica-Bold", 9.5 * scale, 6 * scale, text_max_w)
+    title_y = H - pad - title_size
     c.setFont("Helvetica-Bold", title_size)
     c.drawString(pad, title_y, title_text)
 
-    if size_text:
-        c.setFont("Helvetica-Bold", size_font)
-        c.drawRightString(W - pad, H - pad - size_font, size_text)
+    line_size = 7 * scale
+    id_text, id_size = fit_text(f"ID: {product_id}", "Helvetica-Bold", line_size, 5 * scale, text_max_w)
+    id_y = title_y - id_size - 3 * scale
+    c.setFont("Helvetica-Bold", id_size)
+    c.drawString(pad, id_y, id_text)
 
-    pid_size = 5.5 * scale
-    pid_text = ellipsize(product_id, "Helvetica", pid_size, content_w)
-    pid_y = title_y - pid_size - 2.5 * scale
-    c.setFillColor(GRAY_TEXT)
-    c.setFont("Helvetica", pid_size)
-    c.drawString(pad, pid_y, pid_text)
-
-    divider1_y = pid_y - 4 * scale
-    c.setStrokeColor(GRAY_LINE)
-    c.setLineWidth(0.6)
-    c.line(pad, divider1_y, W - pad, divider1_y)
-
-    # --- Middle section: SKU + MSRP ---
-    label_size = 5.5 * scale
-    labels_y = divider1_y - label_size - 3.5 * scale
-    c.setFillColor(GRAY_TEXT)
-    c.setFont("Helvetica", label_size)
-    c.drawString(pad, labels_y, "SKU")
-    c.drawRightString(W - pad, labels_y, "MSRP")
-
-    value_max = 8 * scale
-    msrp_w = stringWidth(msrp_text, "Helvetica-Bold", value_max) if msrp_text else 0
-    sku_max_w = content_w - (msrp_w + 10 * scale if msrp_text else 0)
-    sku_text, sku_size = fit_text(sku, "Helvetica-Bold", value_max, 5.5 * scale, sku_max_w)
-
-    values_y = labels_y - value_max - 2.5 * scale
-    c.setFillColor(colors.black)
+    sku_line, sku_size = fit_text(f"SKU: {sku}", "Helvetica-Bold", line_size, 5 * scale, text_max_w)
+    sku_y = id_y - sku_size - 3 * scale
     c.setFont("Helvetica-Bold", sku_size)
-    c.drawString(pad, values_y, sku_text)
+    c.drawString(pad, sku_y, sku_line)
 
+    # --- Bottom: dashed divider with MSRP row underneath ---
+    msrp_size = 11 * scale
+    msrp_y = pad * 0.6
+    c.setFont("Helvetica-Bold", msrp_size)
+    c.drawString(pad, msrp_y, "MSRP:")
     if msrp_text:
-        c.setFont("Helvetica-Bold", value_max)
-        c.drawRightString(W - pad, values_y, msrp_text)
+        c.drawRightString(W - pad, msrp_y, msrp_text)
 
-    divider2_y = values_y - 4 * scale
-    c.setStrokeColor(GRAY_LINE)
-    c.line(pad, divider2_y, W - pad, divider2_y)
+    dash_y = msrp_y + msrp_size + 3 * scale
+    c.setLineWidth(1.1 * scale)
+    c.setDash(3 * scale, 2.5 * scale)
+    c.line(pad, dash_y, W - pad, dash_y)
+    c.setDash([])
 
-    # --- Bottom section: vector UPC-A barcode with human-readable digits ---
-    barcode_area_h = divider2_y - pad
-    barcode_area_w = content_w
+    # --- Middle: vector UPC-A barcode centered between SKU and divider ---
+    area_top = sku_y - 4 * scale
+    area_bottom = dash_y + 4 * scale
+    barcode_area_h = area_top - area_bottom
+    barcode_area_w = content_w * 0.85
 
     # Size the symbol explicitly so it fills the label width like the classic
     # barcodeapi.org rendering: UPC-A is 95 modules wide plus ~9-module quiet
@@ -155,7 +156,7 @@ def draw_label(c, label: dict):
 
     bscale = min(barcode_area_w / barcode.width, barcode_area_h / barcode.height, 1.0)
     bx = (W - barcode.width * bscale) / 2
-    by = pad + (barcode_area_h - barcode.height * bscale) / 2
+    by = area_bottom + (barcode_area_h - barcode.height * bscale) / 2
 
     c.saveState()
     c.translate(bx, by)
