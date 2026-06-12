@@ -142,16 +142,18 @@ def draw_label(c, label: dict):
     # Sizing via barWidth instead of canvas scaling keeps the bars wide
     # and the digits large and legible.
     module_width = barcode_area_w / 113.0
-    font_size = max(6.0, min(12.0 * scale, module_width * 8.5))
+    font_size = max(5.0, 7.0 * scale)
 
     # ReportLab's UPCA widget takes the first 11 digits and renders the
-    # check digit itself (already validated to match upc[11]).
+    # check digit itself (already validated to match upc[11]). The digits
+    # are drawn inside barHeight (bars over the digit groups are shortened
+    # to fit them), so the bars can use the full available height.
     barcode = createBarcodeDrawing(
         "UPCA",
         value=upc[:11],
         humanReadable=True,
         barWidth=module_width,
-        barHeight=max(barcode_area_h - font_size, 10),
+        barHeight=barcode_area_h,
         fontSize=font_size,
     )
 
