@@ -135,13 +135,22 @@ def draw_label(c, label: dict):
     barcode_area_h = divider2_y - pad
     barcode_area_w = content_w
 
+    # Size the symbol explicitly so it fills the label width like the classic
+    # barcodeapi.org rendering: UPC-A is 95 modules wide plus ~9-module quiet
+    # zones per side (~113 total). Sizing via barWidth instead of canvas
+    # scaling keeps the bars wide and the digits large and legible.
+    module_width = barcode_area_w / 113.0
+    font_size = max(6.0, min(11.0, module_width * 8.5))
+
     # ReportLab's UPCA widget takes the first 11 digits and renders the
     # check digit itself (already validated to match upc[11]).
     barcode = createBarcodeDrawing(
         "UPCA",
         value=upc[:11],
         humanReadable=True,
-        barHeight=max(barcode_area_h * 0.62, 10),
+        barWidth=module_width,
+        barHeight=max(barcode_area_h - font_size * 1.1, 10),
+        fontSize=font_size,
     )
 
     bscale = min(barcode_area_w / barcode.width, barcode_area_h / barcode.height, 1.0)
