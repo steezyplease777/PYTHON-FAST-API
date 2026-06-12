@@ -8,6 +8,9 @@
   "containers": [
     {
       "class_name": "FastApiContainer",
+      // Pinned to the originally created application name; the DO namespace
+      // is bound to it and cannot be re-attached to a renamed application.
+      "name": "python-fast-api-fastapicontainer",
       "image": "./Dockerfile",
       "max_instances": 1,
       "instance_type": "basic"
