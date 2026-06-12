@@ -5,7 +5,7 @@ import traceback
 from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse, Response
 
-from app.config import LABELS_DEFAULT_BUCKET, MAX_BATCH_LABELS
+from app.config import LABELS_DEFAULT_BUCKET, MAX_BATCH_LABELS, MAX_EXPORT_LABELS
 from app.dependencies import check_label_auth
 from app.models.labels import LabelPayload, BatchPayload, ExportPayload
 from app.services.label_service import generate_pdf, validate_upc
@@ -109,6 +109,15 @@ async def export_labels(request: Request, body: dict = Body(...)):
             raise LabelError(400, "request must be a non-empty array.")
 
         labels = []
+        total_requested_labels = sum(item.amount for item in payload.request)
+
+        if total_requested_labels > MAX_EXPORT_LABELS:
+            raise LabelError(
+                400,
+                f"Too many labels requested: {total_requested_labels} labels from "
+                f"{len(payload.request)} request items (max {MAX_EXPORT_LABELS}).",
+            )
+
         for idx, item in enumerate(payload.request):
             if not item.productId:
                 raise LabelError(400, f"request[{idx}]: productId is required.")
@@ -130,9 +139,6 @@ async def export_labels(request: Request, body: dict = Body(...)):
                 "size": item.size,
             }
             labels.extend([label] * item.amount)
-
-            if len(labels) > MAX_BATCH_LABELS:
-                raise LabelError(400, f"Too many labels requested: {len(labels)} (max {MAX_BATCH_LABELS}).")
 
         pdf_bytes = await asyncio.to_thread(generate_pdf, labels)
 
