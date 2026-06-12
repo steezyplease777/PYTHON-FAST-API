@@ -24,7 +24,7 @@ async def create_label(request: Request, body: dict = Body(...)):
         except Exception as e:
             return label_error_response(400, f"Invalid request body: {e}")
 
-        check_label_auth(request, payload.token)
+        check_label_auth(request)
 
         if not payload.productId:
             raise LabelError(400, "productId is required.")
@@ -103,7 +103,7 @@ async def export_labels(request: Request, body: dict = Body(...)):
         except Exception as e:
             return label_error_response(400, f"Invalid request body: {e}")
 
-        check_label_auth(request, payload.token)
+        check_label_auth(request)
 
         if not payload.request:
             raise LabelError(400, "request must be a non-empty array.")
@@ -174,7 +174,7 @@ async def create_labels_batch(request: Request, body: dict = Body(...)):
         except Exception as e:
             return label_error_response(400, f"Invalid request body: {e}")
 
-        check_label_auth(request, payload.token)
+        check_label_auth(request)
 
         if not payload.variants:
             raise LabelError(400, "variants must be a non-empty array.")
