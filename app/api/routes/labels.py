@@ -133,12 +133,11 @@ async def create_labels_batch(request: Request, body: dict = Body(...)):
                 "size": variant.size,
             })
 
-        pdf_bytes = await asyncio.to_thread(generate_pdf, labels)
-
         normalized_title = normalize_combined_filename(payload.title or "LABELS")
         filename = f"{normalized_title}_UPC_LABELS.pdf"
 
         if mode == "inline":
+            pdf_bytes = await asyncio.to_thread(generate_pdf, labels)
             return JSONResponse({
                 "ok": True,
                 "statusCode": 200,
@@ -151,6 +150,7 @@ async def create_labels_batch(request: Request, body: dict = Body(...)):
             })
 
         if mode == "download":
+            pdf_bytes = await asyncio.to_thread(generate_pdf, labels)
             return Response(
                 content=pdf_bytes,
                 media_type="application/pdf",
@@ -158,22 +158,36 @@ async def create_labels_batch(request: Request, body: dict = Body(...)):
             )
 
         bucket = payload.supabase_bucket or LABELS_DEFAULT_BUCKET
-        path = payload.supabase_path or f"combined/{filename}"
+        uploaded_labels = []
 
-        public_url, download_url = await asyncio.to_thread(upload_label_pdf, pdf_bytes, bucket, path)
+        for label in labels:
+            pdf_bytes = await asyncio.to_thread(generate_pdf, [label])
+            path = f"{sanitize_path_part(label['productId'])}/{label['upc']}.pdf"
+            public_url, download_url = await asyncio.to_thread(upload_label_pdf, pdf_bytes, bucket, path)
+
+            uploaded_labels.append({
+                "url": public_url,
+                "downloadUrl": download_url,
+                "filePath": path,
+                "filename": f"{label['upc']}.pdf",
+                "bucket": bucket,
+                "title": label["title"],
+                "productId": label["productId"],
+                "sku": label["sku"],
+                "upc": label["upc"],
+                "size": label["size"],
+                "msrp": label["msrp"],
+            })
 
         return JSONResponse({
             "ok": True,
             "statusCode": 200,
             "status": "success",
             "mode": "upload",
-            "url": public_url,
-            "downloadUrl": download_url,
-            "filePath": path,
-            "filename": filename,
             "bucket": bucket,
             "title": payload.title,
             "labelCount": len(labels),
+            "labels": uploaded_labels,
         })
 
     except LabelError as e:
