@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse, Response
 
-from app.config import LABELS_DEFAULT_BUCKET, MAX_BATCH_LABELS, MAX_EXPORT_LABELS
+from app.config import LABELS_DEFAULT_BUCKET, MAX_BATCH_LABELS, MAX_EXPORT_ITEMS, MAX_EXPORT_LABELS
 from app.dependencies import check_label_auth
 from app.models.labels import LabelPayload, BatchPayload, ExportPayload
 from app.services.label_service import generate_pdf, validate_upc
@@ -133,6 +133,13 @@ async def export_labels(request: Request, body: Any = Body(...)):
 
         if not payload.request:
             raise LabelError(400, "request must be a non-empty array.")
+
+        if len(payload.request) > MAX_EXPORT_ITEMS:
+            raise LabelError(
+                400,
+                f"Too many request items: {len(payload.request)} distinct labels/SKUs "
+                f"(max {MAX_EXPORT_ITEMS}).",
+            )
 
         labels = []
         total_requested_labels = sum(item.amount for item in payload.request)

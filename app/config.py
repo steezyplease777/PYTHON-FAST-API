@@ -32,7 +32,8 @@ LABELS_DEFAULT_BUCKET = os.environ.get("LABELS_BUCKET", "labels")
 LABEL_WIDTH_IN = float(os.environ.get("LABEL_WIDTH_IN", "3"))
 LABEL_HEIGHT_IN = float(os.environ.get("LABEL_HEIGHT_IN", "1.5"))
 MAX_BATCH_LABELS = int(os.environ.get("MAX_BATCH_LABELS", "500"))
-MAX_EXPORT_LABELS = int(os.environ.get("MAX_EXPORT_LABELS", "5000"))
+MAX_EXPORT_ITEMS = int(os.environ.get("MAX_EXPORT_ITEMS", "500"))
+MAX_EXPORT_LABELS = int(os.environ.get("MAX_EXPORT_LABELS", "10000"))
 
 LABEL_WIDTH_PT = LABEL_WIDTH_IN * inch
 LABEL_HEIGHT_PT = LABEL_HEIGHT_IN * inch
