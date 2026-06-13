@@ -1,6 +1,8 @@
 import asyncio
 import base64
+import json
 import traceback
+from typing import Any
 
 from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse, Response
@@ -16,10 +18,27 @@ from app.utils.formatting import sanitize_path_part, normalize_combined_filename
 router = APIRouter()
 
 
+def normalize_request_body(body: Any) -> dict:
+    if isinstance(body, dict):
+        return body
+
+    if isinstance(body, str):
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError as e:
+            raise LabelError(400, f"Request body string must contain valid JSON: {e}") from e
+
+        if isinstance(parsed, dict):
+            return parsed
+
+    raise LabelError(400, "Request body must be a JSON object.")
+
+
 @router.post("/labels")
-async def create_label(request: Request, body: dict = Body(...)):
+async def create_label(request: Request, body: Any = Body(...)):
     try:
         try:
+            body = normalize_request_body(body)
             payload = LabelPayload.model_validate(body)
         except Exception as e:
             return label_error_response(400, f"Invalid request body: {e}")
@@ -96,9 +115,10 @@ async def create_label(request: Request, body: dict = Body(...)):
 
 
 @router.post("/labels/export")
-async def export_labels(request: Request, body: dict = Body(...)):
+async def export_labels(request: Request, body: Any = Body(...)):
     try:
         try:
+            body = normalize_request_body(body)
             payload = ExportPayload.model_validate(body)
         except Exception as e:
             return label_error_response(400, f"Invalid request body: {e}")
@@ -167,9 +187,10 @@ async def export_labels(request: Request, body: dict = Body(...)):
 
 
 @router.post("/labels/batch")
-async def create_labels_batch(request: Request, body: dict = Body(...)):
+async def create_labels_batch(request: Request, body: Any = Body(...)):
     try:
         try:
+            body = normalize_request_body(body)
             payload = BatchPayload.model_validate(body)
         except Exception as e:
             return label_error_response(400, f"Invalid request body: {e}")
