@@ -19,17 +19,23 @@ router = APIRouter()
 
 
 def normalize_request_body(body: Any) -> dict:
-    if isinstance(body, dict):
-        return body
+    if isinstance(body, bytes):
+        body = body.decode("utf-8")
 
-    if isinstance(body, str):
+    for _ in range(3):
+        if isinstance(body, dict):
+            return body
+
+        if not isinstance(body, str):
+            break
+
         try:
-            parsed = json.loads(body)
+            body = json.loads(body)
         except json.JSONDecodeError as e:
             raise LabelError(400, f"Request body string must contain valid JSON: {e}") from e
 
-        if isinstance(parsed, dict):
-            return parsed
+    if isinstance(body, dict):
+        return body
 
     raise LabelError(400, "Request body must be a JSON object.")
 
