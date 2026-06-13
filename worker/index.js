@@ -16,6 +16,7 @@ const CORS_ALLOW_ORIGIN = "*";
 const CORS_ALLOW_METHODS = "GET, POST, OPTIONS";
 const CORS_ALLOW_HEADERS = "Content-Type, Authorization";
 const CORS_EXPOSE_HEADERS = "Content-Disposition, X-Label-Count";
+const textEncoder = new TextEncoder();
 
 function addCorsHeaders(response) {
   const headers = new Headers(response.headers);
@@ -46,10 +47,50 @@ function corsPreflightResponse() {
   });
 }
 
+async function sha256(value) {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", textEncoder.encode(value)));
+}
+
+function equalBytes(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= left[i] ^ right[i];
+  }
+
+  return diff === 0;
+}
+
+async function isAuthorized(request, apiToken) {
+  const authHeader = request.headers.get("Authorization") ?? "";
+  if (!authHeader.toLowerCase().startsWith("bearer ")) {
+    return false;
+  }
+
+  const candidate = authHeader.slice(7).trim();
+  const [candidateHash, expectedHash] = await Promise.all([
+    sha256(candidate),
+    sha256(apiToken),
+  ]);
+
+  return equalBytes(candidateHash, expectedHash);
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
       return corsPreflightResponse();
+    }
+
+    if (!env.API_TOKEN) {
+      return addCorsHeaders(new Response("API_TOKEN is not configured.", { status: 500 }));
+    }
+
+    if (!(await isAuthorized(request, env.API_TOKEN))) {
+      return addCorsHeaders(new Response("Invalid or missing Authorization bearer token.", { status: 401 }));
     }
 
     const container = getContainer(env.FASTAPI, "api");
