@@ -263,6 +263,14 @@ async def create_labels_batch(request: Request, body: Any = Body(...)):
             )
 
         bucket = payload.supabase_bucket or LABELS_DEFAULT_BUCKET
+        combined_pdf_bytes = await asyncio.to_thread(generate_pdf, labels)
+        combined_path = payload.supabase_path or f"combined/{filename}"
+        combined_url, combined_download_url = await asyncio.to_thread(
+            upload_label_pdf,
+            combined_pdf_bytes,
+            bucket,
+            combined_path,
+        )
         uploaded_labels = []
 
         for label in labels:
@@ -292,6 +300,16 @@ async def create_labels_batch(request: Request, body: Any = Body(...)):
             "bucket": bucket,
             "title": payload.title,
             "labelCount": len(labels),
+            "combined": {
+                "url": combined_url,
+                "downloadUrl": combined_download_url,
+                "filePath": combined_path,
+                "filename": filename,
+                "bucket": bucket,
+            },
+            "combinedUrl": combined_url,
+            "combinedDownloadUrl": combined_download_url,
+            "combinedFilePath": combined_path,
             "labels": uploaded_labels,
         })
 
